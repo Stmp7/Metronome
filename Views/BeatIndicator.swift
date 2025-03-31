@@ -22,4 +22,13 @@ struct BeatIndicator: View {
                 }
             }
     }
+}
+
+#Preview {
+    VStack(spacing: 20) {
+        BeatIndicator(currentBeat: 0, totalBeats: 4, isPlaying: true)
+        BeatIndicator(currentBeat: 1, totalBeats: 4, isPlaying: true)
+        BeatIndicator(currentBeat: 0, totalBeats: 4, isPlaying: false)
+    }
+    .padding()
 } 
