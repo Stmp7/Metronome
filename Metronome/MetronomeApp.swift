@@ -7,11 +7,37 @@
 
 import SwiftUI
 
+// Define an enum to represent the available designs
+// Moved OUTSIDE the struct to make it globally accessible
+enum Design {
+    case classic
+    case new
+}
+
 @main
 struct MetronomeApp: App {
+    // Create the ViewModel instance here so it can be shared
+    @StateObject private var metronomeViewModel = MetronomeViewModel()
+    // State variable to track the current design
+    @State private var currentDesign: Design = .classic
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            // Conditionally render the view based on the currentDesign state
+            Group {
+                if currentDesign == .classic {
+                    // Pass the shared ViewModel and the design state binding
+                    ContentView(viewModel: metronomeViewModel, currentDesign: $currentDesign)
+                } else {
+                    // Pass the shared ViewModel and the design state binding
+                    NewMetronomeView(viewModel: metronomeViewModel, currentDesign: $currentDesign)
+                }
+            }
+            .onAppear {
+                // Optional: Print when the main app view appears
+                print("MetronomeApp WindowGroup appeared. Initial design: \(currentDesign)")
+            }
+            // Removed .preferredColorScheme(.light) unless specifically needed
         }
     }
 }

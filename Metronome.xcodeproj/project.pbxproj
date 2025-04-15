@@ -27,6 +27,8 @@
 		A9D6FAB92D99DC2E00950B72 /* Metronome.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Metronome.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9D6FAC92D99DC2F00950B72 /* MetronomeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MetronomeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A9D6FAD32D99DC2F00950B72 /* MetronomeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MetronomeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A9FAA2F82D9A9A8000EBDE6C /* tick 2.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "tick 2.mp3"; sourceTree = "<group>"; };
+		A9FAA2F92D9A9A8000EBDE6C /* tock 2.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "tock 2.mp3"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +77,7 @@
 		A9D6FAB02D99DC2E00950B72 = {
 			isa = PBXGroup;
 			children = (
+				A9FAA2FA2D9A9A8000EBDE6C /* SFX */,
 				A9D6FABB2D99DC2E00950B72 /* Metronome */,
 				A9D6FACC2D99DC2F00950B72 /* MetronomeTests */,
 				A9D6FAD62D99DC2F00950B72 /* MetronomeUITests */,
@@ -90,6 +93,16 @@
 				A9D6FAD32D99DC2F00950B72 /* MetronomeUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A9FAA2FA2D9A9A8000EBDE6C /* SFX */ = {
+			isa = PBXGroup;
+			children = (
+				A9FAA2F82D9A9A8000EBDE6C /* tick 2.mp3 */,
+				A9FAA2F92D9A9A8000EBDE6C /* tock 2.mp3 */,
+			);
+			name = SFX;
+			path = Metronome/SFX;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
