@@ -58,26 +58,20 @@ struct TempoDisplay: View {
 // Numeric keypad for direct BPM entry
 struct TempoKeypad: View {
     @Binding var tempo: Double
-    @Environment(\.dismiss) private var dismiss
+    var onCancel: () -> Void = {}
+    var onDone: () -> Void = {}
     @State private var enteredValue: String = ""
-    
-    // Min/max allowed BPM values
     private let minBPM: Double = 40
     private let maxBPM: Double = 240
-    
     var body: some View {
         VStack(spacing: 20) {
-            // Title
             Text("Enter BPM")
                 .font(.title)
                 .foregroundColor(.white)
                 .padding(.top)
-            
-            // Display entered value
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.white.opacity(0.1))
-                
                 Text(enteredValue.isEmpty ? "\(Int(tempo))" : enteredValue)
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
@@ -86,8 +80,6 @@ struct TempoKeypad: View {
             }
             .frame(height: 80)
             .padding(.horizontal)
-            
-            // Number pad
             VStack(spacing: 15) {
                 ForEach(0..<3) { row in
                     HStack(spacing: 15) {
@@ -99,19 +91,13 @@ struct TempoKeypad: View {
                         }
                     }
                 }
-                
                 HStack(spacing: 15) {
-                    // Clear button
                     DigitButton(digit: "C", isSpecial: true) {
                         enteredValue = ""
                     }
-                    
-                    // Zero button
                     DigitButton(digit: "0") {
                         appendDigit("0")
                     }
-                    
-                    // Backspace button
                     DigitButton(digit: "⌫", isSpecial: true) {
                         if !enteredValue.isEmpty {
                             enteredValue.removeLast()
@@ -120,44 +106,31 @@ struct TempoKeypad: View {
                 }
             }
             .padding(.horizontal)
-            
-            // Action buttons
-            HStack(spacing: 20) {
-                // Cancel button
+            HStack(spacing: 16) {
                 Button("Cancel") {
-                    dismiss()
+                    onCancel()
                 }
-                .buttonStyle(ActionButtonStyle(isDestructive: true))
-                
-                // Done button
+                .buttonStyle(SecondaryDrawerButtonStyle())
                 Button("Done") {
                     applyTempo()
-                    dismiss()
+                    onDone()
                 }
-                .buttonStyle(ActionButtonStyle())
+                .buttonStyle(PrimaryDrawerButtonStyle())
                 .disabled(enteredValue.isEmpty)
             }
-            .padding()
+            .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(hex: "#330D81"))
-        .onAppear {
-            // Initialize with current tempo
-            enteredValue = ""
-        }
+        .onAppear { enteredValue = "" }
     }
-    
-    // Add digit to entered value
     private func appendDigit(_ digit: String) {
-        if enteredValue.count < 3 { // Limit to 3 digits (40-240 BPM)
+        if enteredValue.count < 3 {
             enteredValue += digit
         }
     }
-    
-    // Apply the entered tempo value
     private func applyTempo() {
         if let newTempo = Double(enteredValue) {
-            // Clamp to valid range
             tempo = min(max(newTempo, minBPM), maxBPM)
         }
     }

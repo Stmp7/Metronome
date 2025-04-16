@@ -8,11 +8,19 @@ struct MinimalMetronomeView: View {
     @State private var currentBeat: Int = 0
     @State private var isPlaying: Bool = false
     @State private var timer: Timer? = nil
+    @State private var initialDelayTimer: Timer? = nil
     @State private var isFirstTick: Bool = true
     @Binding var currentDesign: Design
     
+    // Draft state for time signature picker
+    @State private var draftBeatsPerMeasure: Int = 4
+    @State private var draftNoteValue: Int = 4
+    
+    // Tempo state and keypad
+    @State private var tempo: Double = 120.0
+    @State private var showingTempoKeypad = false
+    
     // Fixed tempo for demo (120 BPM)
-    private let tempo: Double = 120.0
     private var interval: Double { 60.0 / tempo }
     private let soundService = MinimalMetronomeSoundService()
     
@@ -23,6 +31,9 @@ struct MinimalMetronomeView: View {
                 HStack {
                     Spacer()
                     Button(action: {
+                        // Copy real state to draft state when opening picker
+                        draftBeatsPerMeasure = beatsPerMeasure
+                        draftNoteValue = noteValue
                         showingTimeSignaturePicker = true
                     }) {
                         Text("\(beatsPerMeasure)/\(noteValue)")
@@ -44,6 +55,24 @@ struct MinimalMetronomeView: View {
                     accentLevels: $accentPattern
                 )
                 .padding(.top, 10)
+                // Tempo Display
+                VStack(spacing: 4) {
+                    Button(action: { showingTempoKeypad = true }) {
+                        VStack(spacing: 0) {
+                            Text("\(Int(tempo))")
+                                .font(.system(size: 64, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .contentShape(Rectangle())
+                            Text("BPM")
+                                .font(.system(size: 20, weight: .medium))
+                                .foregroundColor(Color.white.opacity(0.75))
+                                .padding(.top, 2)
+                        }
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .padding(.top, 10)
                 // Play/Pause Button
                 MinimalPlayPauseButton(isPlaying: $isPlaying)
                     .padding(.top, 24)
@@ -63,8 +92,8 @@ struct MinimalMetronomeView: View {
         .onChange(of: isPlaying) { playing in
             if playing {
                 currentBeat = 0 // Always start from the first beat when playing starts
-                isFirstTick = true
-                startMetronome()
+                isFirstTick = false
+                startInitialDelay()
             } else {
                 stopMetronome()
             }
@@ -73,11 +102,13 @@ struct MinimalMetronomeView: View {
             // Reset beat if pattern changes
             currentBeat = 0
         }
-        .sheet(isPresented: $showingTimeSignaturePicker) {
+        .sheet(isPresented: $showingTimeSignaturePicker, onDismiss: {
+            // Do nothing on dismiss; real state remains unchanged
+        }) {
             VStack(spacing: 16) {
                 TimeSignaturePicker(
-                    beatsPerMeasure: $beatsPerMeasure,
-                    noteValue: $noteValue
+                    beatsPerMeasure: $draftBeatsPerMeasure,
+                    noteValue: $draftNoteValue
                 )
                 .padding(.horizontal)
                 .padding(.top, 20)
@@ -85,28 +116,23 @@ struct MinimalMetronomeView: View {
                     Button("Cancel") {
                         showingTimeSignaturePicker = false
                     }
-                    .padding()
-                    .frame(minWidth: 100)
-                    .buttonStyle(.bordered)
-                    .tint(Color.white.opacity(0.8))
+                    .buttonStyle(SecondaryDrawerButtonStyle())
                     Button("Apply") {
                         // Generate new accent pattern, preserving user selections
                         let oldPattern = accentPattern
-                        var newPattern = Array(repeating: AccentLevel.piano, count: beatsPerMeasure)
+                        var newPattern = Array(repeating: AccentLevel.piano, count: draftBeatsPerMeasure)
                         if !newPattern.isEmpty {
                             newPattern[0] = .forte
                         }
-                        for i in 0..<min(oldPattern.count, beatsPerMeasure) {
+                        for i in 0..<min(oldPattern.count, draftBeatsPerMeasure) {
                             newPattern[i] = oldPattern[i]
                         }
+                        beatsPerMeasure = draftBeatsPerMeasure
+                        noteValue = draftNoteValue
                         accentPattern = newPattern
                         showingTimeSignaturePicker = false
                     }
-                    .padding()
-                    .frame(minWidth: 100)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color(hex: "#8217FF"))
-                    .font(.headline)
+                    .buttonStyle(PrimaryDrawerButtonStyle())
                 }
                 .padding(.bottom, 16)
             }
@@ -114,21 +140,47 @@ struct MinimalMetronomeView: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(Color(hex: "#330D81"))
         }
+        .sheet(isPresented: $showingTempoKeypad) {
+            let maxHeight = min(550, UIScreen.main.bounds.height * 0.8)
+            ZStack {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                VStack {
+                    Spacer(minLength: 0)
+                    TempoKeypad(
+                        tempo: $tempo,
+                        onCancel: { showingTempoKeypad = false },
+                        onDone: { showingTempoKeypad = false }
+                    )
+                    .background(Color(hex: "#330D81"))
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                }
+            }
+            .presentationDetents([.height(maxHeight)])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color(hex: "#330D81"))
+        }
+    }
+    
+    private func startInitialDelay() {
+        stopMetronome()
+        initialDelayTimer?.invalidate()
+        initialDelayTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { _ in
+            DispatchQueue.main.async {
+                let accent = accentPattern[currentBeat]
+                soundService.playAccent(accent)
+                startMetronome()
+            }
+        }
     }
     
     private func startMetronome() {
-        stopMetronome()
+        timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
             DispatchQueue.main.async {
-                if isFirstTick {
-                    let accent = accentPattern[currentBeat]
-                    soundService.playAccent(accent)
-                    isFirstTick = false
-                } else {
-                    currentBeat = (currentBeat + 1) % accentPattern.count
-                    let accent = accentPattern[currentBeat]
-                    soundService.playAccent(accent)
-                }
+                currentBeat = (currentBeat + 1) % accentPattern.count
+                let accent = accentPattern[currentBeat]
+                soundService.playAccent(accent)
             }
         }
     }
@@ -136,6 +188,8 @@ struct MinimalMetronomeView: View {
     private func stopMetronome() {
         timer?.invalidate()
         timer = nil
+        initialDelayTimer?.invalidate()
+        initialDelayTimer = nil
     }
 }
 
@@ -149,18 +203,11 @@ struct MinimalPlayPauseButton: View {
         }) {
             ZStack {
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [Color(hex: "#8217FF"), Color(hex: "#4E0DA8")]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(Color(hex: "#F3F0DF"))
                     .frame(width: 90, height: 90)
-                    .shadow(color: Color.black.opacity(0.25), radius: 8, x: 0, y: 4)
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 38, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(Color(hex: "#8217FF"))
             }
         }
         .buttonStyle(PlainButtonStyle())
@@ -180,5 +227,35 @@ struct NewMetronomeView_Previews: PreviewProvider {
     @State static var previewDesign: Design = .new
     static var previews: some View {
         NewMetronomeView(currentDesign: $previewDesign)
+    }
+}
+
+// Add custom button styles for drawer buttons
+struct PrimaryDrawerButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 20, weight: .bold))
+            .foregroundColor(Color(hex: "#8217FF"))
+            .frame(minWidth: 120)
+            .padding(.vertical, 10)
+            .background(Color(hex: "#F3F0DF"))
+            .cornerRadius(12)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+    }
+}
+
+struct SecondaryDrawerButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 20, weight: .bold))
+            .foregroundColor(Color(hex: "#F3F0DF"))
+            .frame(minWidth: 120)
+            .padding(.vertical, 10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color(hex: "#F3F0DF"), lineWidth: 2)
+            )
+            .background(Color.clear)
+            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 } 
