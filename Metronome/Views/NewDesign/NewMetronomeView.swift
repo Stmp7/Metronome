@@ -8,6 +8,7 @@ struct MinimalMetronomeView: View {
     @State private var currentBeat: Int = 0
     @State private var isPlaying: Bool = false
     @State private var timer: Timer? = nil
+    @State private var isFirstTick: Bool = true
     @Binding var currentDesign: Design
     
     // Fixed tempo for demo (120 BPM)
@@ -62,6 +63,7 @@ struct MinimalMetronomeView: View {
         .onChange(of: isPlaying) { playing in
             if playing {
                 currentBeat = 0 // Always start from the first beat when playing starts
+                isFirstTick = true
                 startMetronome()
             } else {
                 stopMetronome()
@@ -117,9 +119,17 @@ struct MinimalMetronomeView: View {
     private func startMetronome() {
         stopMetronome()
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
-            let accent = accentPattern[currentBeat]
-            soundService.playAccent(accent)
-            currentBeat = (currentBeat + 1) % accentPattern.count
+            DispatchQueue.main.async {
+                if isFirstTick {
+                    let accent = accentPattern[currentBeat]
+                    soundService.playAccent(accent)
+                    isFirstTick = false
+                } else {
+                    currentBeat = (currentBeat + 1) % accentPattern.count
+                    let accent = accentPattern[currentBeat]
+                    soundService.playAccent(accent)
+                }
+            }
         }
     }
     
