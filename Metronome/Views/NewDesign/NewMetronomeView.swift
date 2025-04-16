@@ -1,68 +1,109 @@
 import SwiftUI
 
-// Helper extension to initialize Color from hex string
-// Removed because it's already defined elsewhere in the project
-// extension Color {
-//    init(hex: String) {
-//        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-//        var int: UInt64 = 0
-//        Scanner(string: hex).scanHexInt64(&int)
-//        let a, r, g, b: UInt64
-//        switch hex.count {
-//        case 3: // RGB (12-bit)
-//            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-//        case 6: // RGB (24-bit)
-//            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-//        case 8: // ARGB (32-bit)
-//            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-//        default:
-//            (a, r, g, b) = (255, 0, 0, 0) // Default to black
-//        }
-//        self.init(
-//            .sRGB,
-//            red: Double(r) / 255,
-//            green: Double(g) / 255,
-//            blue:  Double(b) / 255,
-//            opacity: Double(a) / 255
-//        )
-//    }
-// }
-
-
-struct NewMetronomeView: View {
-    @ObservedObject var viewModel: MetronomeViewModel
+struct MinimalMetronomeView: View {
+    @State private var showingTimeSignaturePicker = false
+    @State private var beatsPerMeasure: Int = 4
+    @State private var noteValue: Int = 4
+    @State private var accentPattern: [AccentLevel] = [.forte, .piano, .piano, .piano]
+    @State private var currentBeat: Int = 0
     @Binding var currentDesign: Design
-
+    
     var body: some View {
         ZStack {
-            // Set the desired background color
-            Color(hex: "#330D81")
-                .ignoresSafeArea() // Make background cover entire screen
-
-            // Add the button to switch back, placed somewhere accessible
-            VStack {
-                Spacer() // Push button to the bottom
+            Color(hex: "#330D81").ignoresSafeArea()
+            VStack(spacing: 20) {
+                HStack {
+                    Spacer()
+                    Button(action: {
+                        showingTimeSignaturePicker = true
+                    }) {
+                        Text("\(beatsPerMeasure)/\(noteValue)")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.white.opacity(0.2))
+                            )
+                    }
+                    .padding(.trailing, 20)
+                }
+                .padding(.top, 20)
+                BeatIndicatorBar(
+                    currentBeat: currentBeat,
+                    totalBeats: accentPattern.count,
+                    accentLevels: $accentPattern
+                )
+                .padding(.top, 10)
                 Button("Switch to Classic Design") {
-                    currentDesign = .classic // Update the state variable
+                    currentDesign = .classic
                 }
                 .padding()
                 .buttonStyle(.bordered)
-                .tint(.white) // Make button text visible on dark background
+                .tint(.white)
+                .padding(.bottom, 20)
             }
-            .padding(.bottom, 20) // Add some padding from the bottom edge
+            .frame(maxHeight: .infinity, alignment: .top)
+            if showingTimeSignaturePicker {
+                Color.black.opacity(0.5).ignoresSafeArea()
+            }
         }
-        .onAppear {
-            print("NewMetronomeView appeared") // Add log to confirm appearance
+        .sheet(isPresented: $showingTimeSignaturePicker) {
+            VStack(spacing: 16) {
+                TimeSignaturePicker(
+                    beatsPerMeasure: $beatsPerMeasure,
+                    noteValue: $noteValue
+                )
+                .padding(.horizontal)
+                .padding(.top, 20)
+                HStack(spacing: 16) {
+                    Button("Cancel") {
+                        showingTimeSignaturePicker = false
+                    }
+                    .padding()
+                    .frame(minWidth: 100)
+                    .buttonStyle(.bordered)
+                    .tint(Color.white.opacity(0.8))
+                    Button("Apply") {
+                        // Generate new accent pattern, preserving user selections
+                        let oldPattern = accentPattern
+                        var newPattern = Array(repeating: AccentLevel.piano, count: beatsPerMeasure)
+                        if !newPattern.isEmpty {
+                            newPattern[0] = .forte
+                        }
+                        for i in 0..<min(oldPattern.count, beatsPerMeasure) {
+                            newPattern[i] = oldPattern[i]
+                        }
+                        accentPattern = newPattern
+                        showingTimeSignaturePicker = false
+                    }
+                    .padding()
+                    .frame(minWidth: 100)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(hex: "#8217FF"))
+                    .font(.headline)
+                }
+                .padding(.bottom, 16)
+            }
+            .presentationDetents([.height(350)])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color(hex: "#330D81"))
         }
+    }
+}
+
+// Replace the main view with this for diagnosis
+struct NewMetronomeView: View {
+    @Binding var currentDesign: Design
+    var body: some View {
+        MinimalMetronomeView(currentDesign: $currentDesign)
     }
 }
 
 struct NewMetronomeView_Previews: PreviewProvider {
     @State static var previewDesign: Design = .new
     static var previews: some View {
-        NewMetronomeView(
-            viewModel: MetronomeViewModel(),
-            currentDesign: $previewDesign
-        )
+        NewMetronomeView(currentDesign: $previewDesign)
     }
-}
+} 

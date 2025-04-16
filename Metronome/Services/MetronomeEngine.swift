@@ -14,6 +14,7 @@ class MetronomeEngine: ObservableObject {
             currentBeat = 0
         }
     }
+    @Published var accentPattern: [AccentLevel] = [.forte, .piano, .piano, .piano]
     
     private var timer: Timer?
     private var audioEngine: AVAudioEngine
@@ -23,6 +24,8 @@ class MetronomeEngine: ObservableObject {
     // --- Add properties to hold loaded/synthesized buffers ---
     private var firstBeatBuffer: AVAudioPCMBuffer? // For tockPlayer (Beat 0)
     private var regularBeatBuffer: AVAudioPCMBuffer? // For tickPlayer (Other beats)
+    private var mezzoForteBuffer: AVAudioPCMBuffer? // Medium accent
+    private var forteBuffer: AVAudioPCMBuffer? // Strong accent
     // --------------------------------------------------------
     
     init() {
@@ -52,12 +55,10 @@ class MetronomeEngine: ObservableObject {
     }
     
     private func loadAudioFiles() {
-        print("Bypassing MP3 loading, using synthesized sounds for testing.") // Updated log
+        print("Creating synthesized sounds for different accent levels...")
         
         // Directly create synthesized sounds instead of trying to load files
         createSynthesizedSounds()
-        
-        // -----------------------------------
     }
     
     // Renamed and repurposed this function for the fallback
@@ -69,22 +70,34 @@ class MetronomeEngine: ObservableObject {
         // Create stereo buffers
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
 
-        // Create first beat sound (higher pitch)
-        let tockFrequency = 1000.0
+        // Create different pitch sounds for different accent levels
         let frameCount = AVAudioFrameCount(sampleRate * duration)
-        self.firstBeatBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
-        if let buffer = self.firstBeatBuffer {
-             fillSineWave(buffer: buffer, frequency: tockFrequency, sampleRate: sampleRate)
-        }
-       
-        // Create regular beat sound (lower pitch)
-        let tickFrequency = 800.0
-        self.regularBeatBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
-         if let buffer = self.regularBeatBuffer {
-             fillSineWave(buffer: buffer, frequency: tickFrequency, sampleRate: sampleRate)
+        
+        // Forte buffer (highest pitch and volume)
+        let forteFrequency = 1200.0
+        self.forteBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+        if let buffer = self.forteBuffer {
+             fillSineWave(buffer: buffer, frequency: forteFrequency, sampleRate: sampleRate, amplitude: 0.7)
         }
         
-        if firstBeatBuffer != nil && regularBeatBuffer != nil {
+        // MezzoForte buffer (medium pitch and volume)
+        let mezzoForteFrequency = 1000.0
+        self.mezzoForteBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+        if let buffer = self.mezzoForteBuffer {
+             fillSineWave(buffer: buffer, frequency: mezzoForteFrequency, sampleRate: sampleRate, amplitude: 0.5)
+        }
+        
+        // First beat sound (tock) - use forte sound
+        self.firstBeatBuffer = self.forteBuffer
+       
+        // Regular beat sound (tick - piano level)
+        let tickFrequency = 800.0
+        self.regularBeatBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+        if let buffer = self.regularBeatBuffer {
+             fillSineWave(buffer: buffer, frequency: tickFrequency, sampleRate: sampleRate, amplitude: 0.3)
+        }
+        
+        if forteBuffer != nil && mezzoForteBuffer != nil && regularBeatBuffer != nil {
             print("Synthesized sounds created successfully.")
         } else {
             print("ERROR: Failed to create synthesized sounds!")
@@ -92,14 +105,14 @@ class MetronomeEngine: ObservableObject {
     }
     
     // Helper to fill a buffer with sine wave (used by createSynthesizedSounds)
-    private func fillSineWave(buffer: AVAudioPCMBuffer, frequency: Double, sampleRate: Double) {
+    private func fillSineWave(buffer: AVAudioPCMBuffer, frequency: Double, sampleRate: Double, amplitude: Float = 0.5) {
         let frameCount = buffer.frameCapacity
         buffer.frameLength = frameCount // Set frame length
         for channel in 0..<Int(buffer.format.channelCount) {
             guard let data = buffer.floatChannelData?[channel] else { continue }
             for frame in 0..<Int(frameCount) {
                 let value = sin(2.0 * .pi * frequency * Double(frame) / sampleRate)
-                data[frame] = Float(value) * 0.5 // Apply amplitude
+                data[frame] = Float(value) * amplitude
             }
         }
     }
@@ -139,36 +152,52 @@ class MetronomeEngine: ObservableObject {
     }
     
     private func playBeat() {
-        // Ensure buffers are loaded before proceeding
-        guard let firstBuffer = firstBeatBuffer, let regularBuffer = regularBeatBuffer else {
-            print("PlayBeat Error: Buffers are not ready!")
-            // Optionally stop the timer here if buffers aren't loaded
-            // stop()
+        // Get the current accent level for this beat
+        let accentLevel: AccentLevel
+        if currentBeat < accentPattern.count {
+            accentLevel = accentPattern[currentBeat]
+        } else {
+            // Default to piano if the accent pattern doesn't cover this beat
+            accentLevel = .piano
+        }
+        
+        // Skip playing sound for muted beats
+        if accentLevel == .mute {
+            // Just increment the beat counter and continue
+            currentBeat = (currentBeat + 1) % timeSignature.beatsPerBar
             return
         }
         
-        let bufferToPlay: AVAudioPCMBuffer
+        // Select the appropriate buffer based on accent level
+        let bufferToPlay: AVAudioPCMBuffer?
         let playerToUse: AVAudioPlayerNode
         
-        if currentBeat == 0 {
-            bufferToPlay = firstBuffer  // Use tock sound
+        switch accentLevel {
+        case .forte:
+            bufferToPlay = forteBuffer
             playerToUse = tockPlayer
-            // print("Playing beat 0 (Tock)") // Optional detailed log
-        } else {
-            bufferToPlay = regularBuffer // Use tick sound
+        case .mezzoForte:
+            bufferToPlay = mezzoForteBuffer
+            playerToUse = tockPlayer
+        case .piano:
+            bufferToPlay = regularBeatBuffer
             playerToUse = tickPlayer
-            // print("Playing beat \(currentBeat) (Tick)") // Optional detailed log
+        case .mute:
+            // This case should have been handled above, but include for completeness
+            bufferToPlay = nil
+            playerToUse = tickPlayer
         }
         
-        // Schedule the chosen buffer onto the chosen player for immediate playback
-        playerToUse.scheduleBuffer(bufferToPlay, at: nil, options: .interruptsAtLoop) { 
-             // This completion handler isn't strictly needed for Timer-based scheduling,
-             // but good to leave for potential future use or debugging.
-             // print("Buffer finished playing")
-         }
-        playerToUse.play() // Ensure the player is playing
+        // Only play if we have a valid buffer
+        if let buffer = bufferToPlay {
+            // Schedule the chosen buffer onto the chosen player for immediate playback
+            playerToUse.scheduleBuffer(buffer, at: nil, options: .interruptsAtLoop) { 
+                // Completion handler (if needed)
+            }
+            playerToUse.play() // Ensure the player is playing
+        }
         
-        currentBeat = (currentBeat + 1) % timeSignature.beatsPerBar // Corrected property name
+        currentBeat = (currentBeat + 1) % timeSignature.beatsPerBar
     }
     
     func setTempoFromTaps(_ intervals: [TimeInterval]) {
@@ -184,4 +213,9 @@ class MetronomeEngine: ObservableObject {
         // Clamp to valid range
         tempo = min(max(newTempo, 40.0), 240.0)
     }
-} 
+    
+    // Updates the accent pattern
+    func updateAccentPattern(_ newPattern: [AccentLevel]) {
+        accentPattern = newPattern
+    }
+}

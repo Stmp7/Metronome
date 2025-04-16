@@ -53,6 +53,18 @@ struct ContentView: View {
             .padding(.horizontal, 40) // Add some horizontal padding
             // --- End Tempo Slider Control ---
             
+            // Add the new Accent Control
+            VStack(alignment: .leading) {
+                Text("Accent Pattern")
+                    .font(.headline)
+                    .foregroundColor(Color(hex: "#110034"))
+                    .padding(.horizontal)
+                
+                AccentControl(viewModel: viewModel)
+                    .frame(height: 50)
+                    .padding(.horizontal)
+            }
+            
             // Beat indicator with play/stop button
             BeatIndicator(
                 currentBeat: viewModel.currentBeat,
@@ -69,6 +81,8 @@ struct ContentView: View {
         .background(Color(hex: "#F3F0DF").ignoresSafeArea())
         .onAppear {
             print("ContentView appeared (Updated Version)") // Modified log for confirmation
+            // Initialize accent pattern when view appears
+            viewModel.updateAccentPatternForTimeSignature()
         }
     }
 }

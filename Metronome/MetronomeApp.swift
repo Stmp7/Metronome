@@ -29,13 +29,16 @@ struct MetronomeApp: App {
                     // Pass the shared ViewModel and the design state binding
                     ContentView(viewModel: metronomeViewModel, currentDesign: $currentDesign)
                 } else {
-                    // Pass the shared ViewModel and the design state binding
-                    NewMetronomeView(viewModel: metronomeViewModel, currentDesign: $currentDesign)
+                    // Pass only the design state binding for the minimal view
+                    NewMetronomeView(currentDesign: $currentDesign)
                 }
             }
             .onAppear {
                 // Optional: Print when the main app view appears
                 print("MetronomeApp WindowGroup appeared. Initial design: \(currentDesign)")
+                
+                // Initialize the accent pattern for the current time signature
+                metronomeViewModel.updateAccentPatternForTimeSignature()
             }
             // Removed .preferredColorScheme(.light) unless specifically needed
         }

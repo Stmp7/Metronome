@@ -9,9 +9,11 @@ class MetronomeViewModel: ObservableObject {
     @Published var currentBeat = 0
     @Published var tapTempoIntervals: [TimeInterval] = []
     @Published var lastTapTime: Date?
+    @Published var accentPattern: [AccentLevel] = [.forte, .piano, .piano, .piano]
     
     private let metronomeEngine: MetronomeEngine
     private var cancellables = Set<AnyCancellable>()
+    private var suspendAccentPatternUpdate = false
     
     init() {
         metronomeEngine = MetronomeEngine()
@@ -27,6 +29,11 @@ class MetronomeViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .assign(to: &$tempo)
         
+        // Bind accent pattern from engine
+        metronomeEngine.$accentPattern
+            .receive(on: RunLoop.main)
+            .assign(to: &$accentPattern)
+        
         // Remove the binding from Engine's timeSignature back to the ViewModel's timeSignature
         /*
         metronomeEngine.$timeSignature
@@ -41,6 +48,18 @@ class MetronomeViewModel: ObservableObject {
             .sink { [weak self] newSignature in
                 print("ViewModel timeSignature changed to: \(newSignature). Updating engine.")
                 self?.metronomeEngine.timeSignature = newSignature
+                if self?.suspendAccentPatternUpdate == false {
+                    self?.updateAccentPatternForTimeSignature()
+                }
+            }
+            .store(in: &cancellables)
+            
+        // Forward accent pattern changes to the engine
+        $accentPattern
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] newPattern in
+                self?.metronomeEngine.updateAccentPattern(newPattern)
             }
             .store(in: &cancellables)
     }
@@ -73,5 +92,43 @@ class MetronomeViewModel: ObservableObject {
         }
         
         lastTapTime = now
+    }
+    
+    // Set up the default accent pattern based on the time signature
+    func updateAccentPatternForTimeSignature() {
+        let beatsPerBar = timeSignature.beatsPerBar
+        var newAccents = Array(repeating: AccentLevel.piano, count: beatsPerBar)
+        
+        // First beat is always forte
+        if !newAccents.isEmpty {
+            newAccents[0] = .forte
+        }
+        
+        // For compound meters (e.g. 6/8, 9/8, 12/8), add secondary accents
+        if timeSignature.subdivision > 1 {
+            for i in stride(from: timeSignature.subdivision, to: beatsPerBar, by: timeSignature.subdivision) {
+                if i < beatsPerBar {
+                    newAccents[i] = .mezzoForte
+                }
+            }
+        }
+        
+        accentPattern = newAccents
+    }
+    
+    // Methods to control accent pattern update suspension
+    func suspendAccentPatternUpdates() {
+        suspendAccentPatternUpdate = true
+    }
+    func resumeAccentPatternUpdates() {
+        suspendAccentPatternUpdate = false
+    }
+    
+    // Atomic update for time signature and accent pattern
+    func applyTimeSignatureAndAccentPattern(_ timeSignature: TimeSignature, _ accentPattern: [AccentLevel]) {
+        suspendAccentPatternUpdates()
+        self.timeSignature = timeSignature
+        self.accentPattern = accentPattern
+        resumeAccentPatternUpdates()
     }
 } 
