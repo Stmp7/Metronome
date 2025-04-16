@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreHaptics
 
 struct MinimalMetronomeView: View {
     @State private var showingTimeSignaturePicker = false
@@ -23,6 +24,8 @@ struct MinimalMetronomeView: View {
     // Fixed tempo for demo (120 BPM)
     private var interval: Double { 60.0 / tempo }
     private let soundService = MinimalMetronomeSoundService()
+    
+    @State private var engine: CHHapticEngine? = nil
     
     var body: some View {
         ZStack {
@@ -73,9 +76,24 @@ struct MinimalMetronomeView: View {
                     .buttonStyle(PlainButtonStyle())
                 }
                 .padding(.top, 10)
-                // Play/Pause Button
-                MinimalPlayPauseButton(isPlaying: $isPlaying)
-                    .padding(.top, 24)
+                // Tempo Dial + Play Button
+                ZStack {
+                    TempoDial(
+                        bpm: $tempo,
+                        minBPM: 40,
+                        maxBPM: 240,
+                        diameter: 220,
+                        innerDiameter: 96,
+                        tickInterval: 5,
+                        color: Color(hex: "#200854"),
+                        tickColor: Color.white.opacity(0.25),
+                        onHaptic: { performHaptic() }
+                    )
+                    MinimalPlayPauseButton(isPlaying: $isPlaying)
+                        .frame(width: 88, height: 88)
+                }
+                .frame(height: 220)
+                .padding(.bottom, 32)
                 Button("Switch to Classic Design") {
                     currentDesign = .classic
                 }
@@ -160,6 +178,7 @@ struct MinimalMetronomeView: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(Color(hex: "#330D81"))
         }
+        .onAppear { prepareHaptics() }
     }
     
     private func startInitialDelay() {
@@ -190,6 +209,26 @@ struct MinimalMetronomeView: View {
         timer = nil
         initialDelayTimer?.invalidate()
         initialDelayTimer = nil
+    }
+    
+    private func prepareHaptics() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
+        do {
+            engine = try CHHapticEngine()
+            try engine?.start()
+        } catch { engine = nil }
+    }
+    
+    private func performHaptic() {
+        guard let engine = engine else { return }
+        let sharpness = CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.7)
+        let intensity = CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.7)
+        let event = CHHapticEvent(eventType: .hapticTransient, parameters: [sharpness, intensity], relativeTime: 0)
+        do {
+            let pattern = try CHHapticPattern(events: [event], parameters: [])
+            let player = try engine.makePlayer(with: pattern)
+            try player.start(atTime: 0)
+        } catch {}
     }
 }
 
@@ -257,5 +296,73 @@ struct SecondaryDrawerButtonStyle: ButtonStyle {
             )
             .background(Color.clear)
             .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+struct TempoDial: View {
+    @Binding var bpm: Double
+    let minBPM: Double
+    let maxBPM: Double
+    let diameter: CGFloat
+    let innerDiameter: CGFloat
+    let tickInterval: Int
+    let color: Color
+    let tickColor: Color
+    let onHaptic: () -> Void
+    @State private var lastAngle: CGFloat? = nil
+    @State private var lastBPM: Int = 0
+    var body: some View {
+        GeometryReader { geo in
+            let center = CGPoint(x: geo.size.width/2, y: geo.size.height/2)
+            let borderWidth: CGFloat = 14
+            let borderDiameter = diameter - borderWidth
+            let tickLength: CGFloat = 8
+            let tickCount = Int((maxBPM-minBPM)/Double(tickInterval/2))+1
+            ZStack {
+                // Donut base
+                Circle()
+                    .fill(color)
+                    .frame(width: diameter, height: diameter)
+                // Outer border (inset)
+                Circle()
+                    .stroke(Color(hex: "#110034"), lineWidth: borderWidth)
+                    .frame(width: borderDiameter, height: borderDiameter)
+                // Donut hole
+                Circle()
+                    .fill(Color.clear)
+                    .frame(width: innerDiameter, height: innerDiameter)
+                    .blendMode(.destinationOut)
+                // Tick marks (centered on border)
+                ForEach(0..<tickCount, id: \ .self) { i in
+                    let angle = Angle(degrees: Double(i) / Double(tickCount) * 360)
+                    Capsule()
+                        .fill(Color.white.opacity(0.25))
+                        .frame(width: 1, height: 8)
+                        .offset(y: -(borderDiameter/2))
+                        .rotationEffect(angle, anchor: .center)
+                }
+            }
+            .compositingGroup()
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let dragPoint = value.location
+                    let dx = dragPoint.x - center.x
+                    let dy = dragPoint.y - center.y
+                    let distance = sqrt(dx*dx + dy*dy)
+                    // Only allow dragging on the ring
+                    if distance < innerDiameter/2 + 12 || distance > diameter/2 - 12 { return }
+                    let angle = atan2(dy, dx)
+                    let degrees = angle * 180 / .pi
+                    let normalized = (degrees + 360).truncatingRemainder(dividingBy: 360)
+                    let sweep = min(max(normalized, 0), 360)
+                    let newBPM = Int(round(Double(minBPM) + (Double(sweep)/360) * (maxBPM-minBPM)))
+                    if newBPM != Int(bpm) {
+                        bpm = Double(newBPM)
+                        onHaptic()
+                    }
+                }
+            )
+        }
+        .frame(width: diameter, height: diameter)
     }
 } 
