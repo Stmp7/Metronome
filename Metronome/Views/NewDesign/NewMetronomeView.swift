@@ -6,7 +6,14 @@ struct MinimalMetronomeView: View {
     @State private var noteValue: Int = 4
     @State private var accentPattern: [AccentLevel] = [.forte, .piano, .piano, .piano]
     @State private var currentBeat: Int = 0
+    @State private var isPlaying: Bool = false
+    @State private var timer: Timer? = nil
     @Binding var currentDesign: Design
+    
+    // Fixed tempo for demo (120 BPM)
+    private let tempo: Double = 120.0
+    private var interval: Double { 60.0 / tempo }
+    private let soundService = MinimalMetronomeSoundService()
     
     var body: some View {
         ZStack {
@@ -36,6 +43,9 @@ struct MinimalMetronomeView: View {
                     accentLevels: $accentPattern
                 )
                 .padding(.top, 10)
+                // Play/Pause Button
+                MinimalPlayPauseButton(isPlaying: $isPlaying)
+                    .padding(.top, 24)
                 Button("Switch to Classic Design") {
                     currentDesign = .classic
                 }
@@ -48,6 +58,18 @@ struct MinimalMetronomeView: View {
             if showingTimeSignaturePicker {
                 Color.black.opacity(0.5).ignoresSafeArea()
             }
+        }
+        .onChange(of: isPlaying) { playing in
+            if playing {
+                currentBeat = 0 // Always start from the first beat when playing starts
+                startMetronome()
+            } else {
+                stopMetronome()
+            }
+        }
+        .onChange(of: accentPattern.count) { _ in
+            // Reset beat if pattern changes
+            currentBeat = 0
         }
         .sheet(isPresented: $showingTimeSignaturePicker) {
             VStack(spacing: 16) {
@@ -90,6 +112,49 @@ struct MinimalMetronomeView: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(Color(hex: "#330D81"))
         }
+    }
+    
+    private func startMetronome() {
+        stopMetronome()
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
+            let accent = accentPattern[currentBeat]
+            soundService.playAccent(accent)
+            currentBeat = (currentBeat + 1) % accentPattern.count
+        }
+    }
+    
+    private func stopMetronome() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
+struct MinimalPlayPauseButton: View {
+    @Binding var isPlaying: Bool
+    var body: some View {
+        Button(action: {
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                isPlaying.toggle()
+            }
+        }) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color(hex: "#8217FF"), Color(hex: "#4E0DA8")]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 90, height: 90)
+                    .shadow(color: Color.black.opacity(0.25), radius: 8, x: 0, y: 4)
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 38, weight: .bold))
+                    .foregroundColor(.white)
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel(isPlaying ? "Pause" : "Play")
     }
 }
 
