@@ -6,6 +6,7 @@ class MetronomeEngine: ObservableObject {
     @Published var currentBeat = 0
     @Published var tempo: Double = 120.0 {
         didSet {
+            // print("[Engine] tempo didSet: \(tempo)")
             updateTimerInterval()
         }
     }
@@ -47,7 +48,7 @@ class MetronomeEngine: ObservableObject {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("Failed to setup audio session: \(error)")
+            // print("Failed to setup audio session: \(error)")
         }
         
         // Load audio files (which will populate the buffer properties)
@@ -55,7 +56,7 @@ class MetronomeEngine: ObservableObject {
     }
     
     private func loadAudioFiles() {
-        print("Creating synthesized sounds for different accent levels...")
+        // print("Creating synthesized sounds for different accent levels...")
         
         // Directly create synthesized sounds instead of trying to load files
         createSynthesizedSounds()
@@ -63,7 +64,7 @@ class MetronomeEngine: ObservableObject {
     
     // Renamed and repurposed this function for the fallback
     private func createSynthesizedSounds() {
-        print("Creating synthesized sounds...")
+        // print("Creating synthesized sounds...")
         let sampleRate = 44100.0
         let duration = 0.1
         
@@ -98,9 +99,9 @@ class MetronomeEngine: ObservableObject {
         }
         
         if forteBuffer != nil && mezzoForteBuffer != nil && regularBeatBuffer != nil {
-            print("Synthesized sounds created successfully.")
+            // print("Synthesized sounds created successfully.")
         } else {
-            print("ERROR: Failed to create synthesized sounds!")
+            // print("ERROR: Failed to create synthesized sounds!")
         }
     }
     
@@ -118,9 +119,20 @@ class MetronomeEngine: ObservableObject {
     }
     
     private func updateTimerInterval() {
+        // print("[Engine] updateTimerInterval called. isPlaying=\(isPlaying), tempo=\(tempo)")
         if isPlaying {
-            stop()
-            start()
+            rescheduleTimer()
+        }
+    }
+    
+    private func rescheduleTimer() {
+        // print("[Engine] rescheduleTimer called. tempo=\(tempo)")
+        timer?.invalidate()
+        playBeat() // Play immediately on BPM change
+        let interval = 60.0 / tempo
+        // print("[Engine] Scheduling new timer with interval=\(interval)")
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.playBeat()
         }
     }
     
@@ -132,7 +144,7 @@ class MetronomeEngine: ObservableObject {
             tickPlayer.play()
             tockPlayer.play()
         } catch {
-            print("Failed to start audio engine: \(error)")
+            // print("Failed to start audio engine: \(error)")
             return
         }
         
@@ -152,6 +164,7 @@ class MetronomeEngine: ObservableObject {
     }
     
     private func playBeat() {
+        // print("[Engine] playBeat called. tempo=\(tempo), currentBeat=\(currentBeat)")
         // Get the current accent level for this beat
         let accentLevel: AccentLevel
         if currentBeat < accentPattern.count {

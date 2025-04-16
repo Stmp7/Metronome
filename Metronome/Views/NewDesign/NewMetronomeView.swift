@@ -2,6 +2,8 @@ import SwiftUI
 import CoreHaptics
 
 struct MinimalMetronomeView: View {
+    @ObservedObject var viewModel: NewMetronomeViewModel
+    @Binding var currentDesign: Design
     @State private var showingTimeSignaturePicker = false
     @State private var beatsPerMeasure: Int = 4
     @State private var noteValue: Int = 4
@@ -11,21 +13,17 @@ struct MinimalMetronomeView: View {
     @State private var timer: Timer? = nil
     @State private var initialDelayTimer: Timer? = nil
     @State private var isFirstTick: Bool = true
-    @Binding var currentDesign: Design
-    
     // Draft state for time signature picker
     @State private var draftBeatsPerMeasure: Int = 4
     @State private var draftNoteValue: Int = 4
-    
-    // Tempo state and keypad
-    @State private var tempo: Double = 120.0
     @State private var showingTempoKeypad = false
-    
-    // Fixed tempo for demo (120 BPM)
-    private var interval: Double { 60.0 / tempo }
     private let soundService = MinimalMetronomeSoundService()
-    
     @State private var engine: CHHapticEngine? = nil
+    @State private var lastAngle: CGFloat? = nil
+    @State private var lastBPM: Int = 0
+    @State private var dialAngle: Double = 0 // in degrees
+    @State private var isDragging: Bool = false
+    private var interval: Double { 60.0 / viewModel.tempo }
     
     var body: some View {
         ZStack {
@@ -62,7 +60,7 @@ struct MinimalMetronomeView: View {
                 VStack(spacing: 4) {
                     Button(action: { showingTempoKeypad = true }) {
                         VStack(spacing: 0) {
-                            Text("\(Int(tempo))")
+                            Text("\(Int(viewModel.tempo))")
                                 .font(.system(size: 64, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
@@ -79,7 +77,7 @@ struct MinimalMetronomeView: View {
                 // Tempo Dial + Play Button
                 ZStack {
                     TempoDial(
-                        bpm: $tempo,
+                        bpm: $viewModel.tempo,
                         minBPM: 40,
                         maxBPM: 240,
                         diameter: 220,
@@ -87,7 +85,8 @@ struct MinimalMetronomeView: View {
                         tickInterval: 5,
                         color: Color(hex: "#200854"),
                         tickColor: Color.white.opacity(0.25),
-                        onHaptic: { performHaptic() }
+                        onHaptic: { performHaptic() },
+                        onTick: { soundService.playTick() }
                     )
                     MinimalPlayPauseButton(isPlaying: $isPlaying)
                         .frame(width: 88, height: 88)
@@ -166,7 +165,7 @@ struct MinimalMetronomeView: View {
                 VStack {
                     Spacer(minLength: 0)
                     TempoKeypad(
-                        tempo: $tempo,
+                        tempo: $viewModel.tempo,
                         onCancel: { showingTempoKeypad = false },
                         onDone: { showingTempoKeypad = false }
                     )
@@ -254,11 +253,11 @@ struct MinimalPlayPauseButton: View {
     }
 }
 
-// Replace the main view with this for diagnosis
 struct NewMetronomeView: View {
     @Binding var currentDesign: Design
+    @StateObject private var viewModel = NewMetronomeViewModel()
     var body: some View {
-        MinimalMetronomeView(currentDesign: $currentDesign)
+        MinimalMetronomeView(viewModel: viewModel, currentDesign: $currentDesign)
     }
 }
 
@@ -309,38 +308,70 @@ struct TempoDial: View {
     let color: Color
     let tickColor: Color
     let onHaptic: () -> Void
+    let onTick: () -> Void
     @State private var lastAngle: CGFloat? = nil
     @State private var lastBPM: Int = 0
+    @State private var dialAngle: Double = 0 // in degrees
+    @State private var isDragging: Bool = false
+
+    private var borderWidth: CGFloat { 14 }
+    private var borderDiameter: CGFloat { diameter - borderWidth }
+    private var tickCount: Int { Int((maxBPM-minBPM)/Double(tickInterval/2))+1 }
+    private var dotRadius: CGFloat { 9 }
+    private var dotOffset: CGFloat { (diameter / 2) - borderWidth - dotRadius - 6 }
+    private var bpmRange: Double { maxBPM - minBPM }
+    private var anglePerBPM: Double { 360.0 / bpmRange }
+    private var indicatorAngle: Angle {
+        let progress = (bpm - minBPM) / (maxBPM - minBPM)
+        return Angle(degrees: 180 + (progress * 360))
+    }
+    private var innerShadow: ShadowStyle { .inner(color: .black.opacity(0.5), radius: 4, x: 0, y: -8) }
+
+    private var tickMarks: some View {
+        ForEach(0..<tickCount, id: \ .self) { i in
+            let angle = Angle(degrees: Double(i) / Double(tickCount) * 360)
+            Capsule()
+                .fill(Color.white.opacity(0.25))
+                .frame(width: 1, height: 8)
+                .offset(y: -(borderDiameter/2))
+                .rotationEffect(angle, anchor: .center)
+        }
+    }
+
+    private var indicatorDot: some View {
+        Circle()
+            .fill(Color(hex: "#4314A8"))
+            .frame(width: dotRadius * 2, height: dotRadius * 2)
+            .shadow(color: Color.black.opacity(0.25), radius: 2, x: 2, y: 2)
+            .offset(x: 0, y: -dotOffset)
+            .rotationEffect(indicatorAngle, anchor: .center)
+    }
+
     var body: some View {
         GeometryReader { geo in
             let center = CGPoint(x: geo.size.width/2, y: geo.size.height/2)
-            let borderWidth: CGFloat = 14
-            let borderDiameter = diameter - borderWidth
-            let tickLength: CGFloat = 8
-            let tickCount = Int((maxBPM-minBPM)/Double(tickInterval/2))+1
+            let dragMargin: CGFloat = 24 // allow dragging slightly outside dial
             ZStack {
-                // Donut base
-                Circle()
-                    .fill(color)
-                    .frame(width: diameter, height: diameter)
-                // Outer border (inset)
-                Circle()
-                    .stroke(Color(hex: "#110034"), lineWidth: borderWidth)
-                    .frame(width: borderDiameter, height: borderDiameter)
-                // Donut hole
-                Circle()
-                    .fill(Color.clear)
-                    .frame(width: innerDiameter, height: innerDiameter)
-                    .blendMode(.destinationOut)
-                // Tick marks (centered on border)
-                ForEach(0..<tickCount, id: \ .self) { i in
-                    let angle = Angle(degrees: Double(i) / Double(tickCount) * 360)
-                    Capsule()
-                        .fill(Color.white.opacity(0.25))
-                        .frame(width: 1, height: 8)
-                        .offset(y: -(borderDiameter/2))
-                        .rotationEffect(angle, anchor: .center)
+                Group {
+                    // Donut base
+                    Circle()
+                        .fill(color)
+                        .frame(width: diameter, height: diameter)
+                    // Outer border (inset)
+                    Circle()
+                        .stroke(Color(hex: "#110034"), lineWidth: borderWidth)
+                        .frame(width: borderDiameter, height: borderDiameter)
+                    // Donut hole
+                    Circle()
+                        .fill(Color.clear)
+                        .frame(width: innerDiameter, height: innerDiameter)
+                        .blendMode(.destinationOut)
+                    // Tick marks (centered on border)
+                    tickMarks
                 }
+                .rotationEffect(.degrees(dialAngle))
+                // Moving indicator dot (carved look)
+                indicatorDot
             }
             .compositingGroup()
             .gesture(DragGesture(minimumDistance: 0)
@@ -349,19 +380,68 @@ struct TempoDial: View {
                     let dx = dragPoint.x - center.x
                     let dy = dragPoint.y - center.y
                     let distance = sqrt(dx*dx + dy*dy)
-                    // Only allow dragging on the ring
-                    if distance < innerDiameter/2 + 12 || distance > diameter/2 - 12 { return }
+                    if !isDragging {
+                        if distance < innerDiameter/2 || distance > diameter/2 + dragMargin { return }
+                        isDragging = true
+                    }
                     let angle = atan2(dy, dx)
                     let degrees = angle * 180 / .pi
-                    let normalized = (degrees + 360).truncatingRemainder(dividingBy: 360)
-                    let sweep = min(max(normalized, 0), 360)
-                    let newBPM = Int(round(Double(minBPM) + (Double(sweep)/360) * (maxBPM-minBPM)))
-                    if newBPM != Int(bpm) {
-                        bpm = Double(newBPM)
-                        onHaptic()
+                    if let last = lastAngle {
+                        var delta = degrees - last
+                        if delta > 180 { delta -= 360 }
+                        if delta < -180 { delta += 360 }
+                        var newAngle = dialAngle + Double(delta)
+                        let bpmRange = maxBPM - minBPM
+                        let anglePerBPM = 360.0 / bpmRange
+                        var newBPM = Int(round(Double(minBPM) + newAngle / anglePerBPM))
+                        // Clamp BPM
+                        if newBPM < Int(minBPM) { newBPM = Int(minBPM) }
+                        if newBPM > Int(maxBPM) { newBPM = Int(maxBPM) }
+                        // Freeze dialAngle at boundary if dragging further out
+                        if (Int(bpm) == Int(minBPM) && newBPM == Int(minBPM) && delta < 0) {
+                            // At min, dragging further down: freeze
+                            // Do not update dialAngle
+                        } else if (Int(bpm) == Int(maxBPM) && newBPM == Int(maxBPM) && delta > 0) {
+                            // At max, dragging further up: freeze
+                            // Do not update dialAngle
+                        } else {
+                            withAnimation(.easeOut(duration: 0.08)) {
+                                dialAngle = newAngle
+                            }
+                        }
+                        if newBPM != Int(bpm) {
+                            bpm = Double(newBPM)
+                            onHaptic()
+                            onTick()
+                        }
+                    }
+                    lastAngle = degrees
+                }
+                .onEnded { _ in
+                    lastAngle = nil
+                    isDragging = false
+                    // Snap dialAngle to the clamped BPM
+                    let bpmRange = maxBPM - minBPM
+                    let anglePerBPM = 360.0 / bpmRange
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        dialAngle = (bpm - minBPM) * anglePerBPM
                     }
                 }
             )
+            .onAppear {
+                // Set initial dial angle based on BPM
+                let bpmRange = maxBPM - minBPM
+                let anglePerBPM = 360.0 / bpmRange
+                dialAngle = (bpm - minBPM) * anglePerBPM
+            }
+            .onChange(of: bpm) { newBPM in
+                // Keep dial angle in sync with BPM
+                let bpmRange = maxBPM - minBPM
+                let anglePerBPM = 360.0 / bpmRange
+                withAnimation(.easeOut(duration: 0.08)) {
+                    dialAngle = (newBPM - minBPM) * anglePerBPM
+                }
+            }
         }
         .frame(width: diameter, height: diameter)
     }
