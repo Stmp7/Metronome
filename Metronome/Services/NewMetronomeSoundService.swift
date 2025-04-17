@@ -7,7 +7,10 @@ class NewMetronomeSoundService {
     private var forteSound: AVAudioPlayer?
     private var mezzoForteSound: AVAudioPlayer?
     private var pianoSound: AVAudioPlayer?
-    
+    // Synth fallback players
+    private var forteSynth: AVAudioPlayer?
+    private var mezzoForteSynth: AVAudioPlayer?
+    private var pianoSynth: AVAudioPlayer?
     // Flag to track initialization status
     private var isInitialized = false
     
@@ -15,16 +18,16 @@ class NewMetronomeSoundService {
         setupSounds()
     }
     
-    /// Setup sound files for each accent level
+    /// Setup sound files for each accent level, with synth fallback
     private func setupSounds() {
-        // Only initialize once
         guard !isInitialized else { return }
-        
-        // Setup each accent level sound
+        // Try to load each file, fallback to synth if missing
         forteSound = createPlayer(for: "high_wood_block")
+        if forteSound == nil { forteSynth = createSynthPlayer(frequency: 1200.0, amplitude: 0.7) }
         mezzoForteSound = createPlayer(for: "mid_wood_block")
+        if mezzoForteSound == nil { mezzoForteSynth = createSynthPlayer(frequency: 1000.0, amplitude: 0.5) }
         pianoSound = createPlayer(for: "low_wood_block")
-        
+        if pianoSound == nil { pianoSynth = createSynthPlayer(frequency: 800.0, amplitude: 0.3) }
         isInitialized = true
     }
     
@@ -34,7 +37,6 @@ class NewMetronomeSoundService {
             print("Could not find sound file: \(filename)")
             return nil
         }
-        
         do {
             let player = try AVAudioPlayer(contentsOf: soundURL)
             player.prepareToPlay()
@@ -45,33 +47,55 @@ class NewMetronomeSoundService {
         }
     }
     
+    /// Helper to create a synthesized tone as an AVAudioPlayer
+    private func createSynthPlayer(frequency: Double, amplitude: Float) -> AVAudioPlayer? {
+        let sampleRate = 44100.0
+        let duration = 0.1
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        let frameCount = AVAudioFrameCount(sampleRate * duration)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return nil }
+        buffer.frameLength = frameCount
+        if let data = buffer.floatChannelData?[0] {
+            for frame in 0..<Int(frameCount) {
+                data[frame] = sin(Float(2.0 * .pi * frequency * Double(frame) / sampleRate)) * amplitude
+            }
+        }
+        // Write buffer to a temp file and load as AVAudioPlayer
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+        do {
+            try writeBuffer(buffer, to: tempURL, format: format)
+            let player = try AVAudioPlayer(contentsOf: tempURL)
+            player.prepareToPlay()
+            return player
+        } catch {
+            print("Failed to create synth player: \(error)")
+            return nil
+        }
+    }
+    
+    /// Write AVAudioPCMBuffer to a .wav file
+    private func writeBuffer(_ buffer: AVAudioPCMBuffer, to url: URL, format: AVAudioFormat) throws {
+        guard let file = try? AVAudioFile(forWriting: url, settings: format.settings) else { throw NSError(domain: "SynthWrite", code: 1) }
+        try file.write(from: buffer)
+    }
+    
     /// Play the appropriate sound for a given accent level
     func playSound(for accentLevel: AccentLevel) {
-        // Skip playing for muted accents
-        if accentLevel == .mute {
-            return
-        }
-        
-        // Select and play the appropriate sound
+        if accentLevel == .mute { return }
         let player: AVAudioPlayer? = {
             switch accentLevel {
             case .forte:
-                return forteSound
+                return forteSound ?? forteSynth
             case .mezzoForte:
-                return mezzoForteSound
+                return mezzoForteSound ?? mezzoForteSynth
             case .piano:
-                return pianoSound
+                return pianoSound ?? pianoSynth
             case .mute:
                 return nil
             }
         }()
-        
-        // Play the sound if available
         if let player = player {
-            // Restart the sound if it's already playing
-            if player.isPlaying {
-                player.currentTime = 0
-            }
+            if player.isPlaying { player.currentTime = 0 }
             player.play()
         }
     }
@@ -79,12 +103,9 @@ class NewMetronomeSoundService {
     /// Play the sound for the current beat based on the accent pattern
     func playBeat(index: Int, accentPattern: [AccentLevel]) {
         guard index >= 0, index < accentPattern.count else {
-            // Fallback to piano for out-of-bounds indices
             playSound(for: .piano)
             return
         }
-        
-        // Play the sound for the accent level at this beat
         let accentLevel = accentPattern[index]
         playSound(for: accentLevel)
     }

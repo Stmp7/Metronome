@@ -5,15 +5,6 @@ struct MinimalMetronomeView: View {
     @ObservedObject var viewModel: NewMetronomeViewModel
     @Binding var currentDesign: Design
     @State private var showingTimeSignaturePicker = false
-    @State private var beatsPerMeasure: Int = 4
-    @State private var noteValue: Int = 4
-    @State private var accentPattern: [AccentLevel] = [.forte, .piano, .piano, .piano]
-    @State private var currentBeat: Int = 0
-    @State private var isPlaying: Bool = false
-    @State private var timer: Timer? = nil
-    @State private var initialDelayTimer: Timer? = nil
-    @State private var isFirstTick: Bool = true
-    // Draft state for time signature picker
     @State private var draftBeatsPerMeasure: Int = 4
     @State private var draftNoteValue: Int = 4
     @State private var showingTempoKeypad = false
@@ -31,13 +22,13 @@ struct MinimalMetronomeView: View {
             VStack(spacing: 20) {
                 HStack {
                     Spacer()
+                    let denominator = Int(viewModel.timeSignature.rawValue.split(separator: "/").last ?? "4") ?? 4
                     Button(action: {
-                        // Copy real state to draft state when opening picker
-                        draftBeatsPerMeasure = beatsPerMeasure
-                        draftNoteValue = noteValue
+                        draftBeatsPerMeasure = viewModel.accentPattern.count
+                        draftNoteValue = denominator
                         showingTimeSignaturePicker = true
                     }) {
-                        Text("\(beatsPerMeasure)/\(noteValue)")
+                        Text("\(viewModel.accentPattern.count)/\(denominator)")
                             .font(.system(size: 24, weight: .bold))
                             .foregroundColor(.white)
                             .padding(.horizontal, 12)
@@ -51,9 +42,9 @@ struct MinimalMetronomeView: View {
                 }
                 .padding(.top, 20)
                 BeatIndicatorBar(
-                    currentBeat: currentBeat,
-                    totalBeats: accentPattern.count,
-                    accentLevels: $accentPattern
+                    currentBeat: viewModel.currentBeat,
+                    totalBeats: viewModel.accentPattern.count,
+                    accentLevels: $viewModel.accentPattern
                 )
                 .padding(.top, 10)
                 // Tempo Display
@@ -86,10 +77,13 @@ struct MinimalMetronomeView: View {
                         color: Color(hex: "#200854"),
                         tickColor: Color.white.opacity(0.25),
                         onHaptic: { performHaptic() },
-                        onTick: { soundService.playTick() }
+                        onTick: { /* no-op, sound is handled by ViewModel */ }
                     )
-                    MinimalPlayPauseButton(isPlaying: $isPlaying)
-                        .frame(width: 88, height: 88)
+                    MinimalPlayPauseButton(
+                        onToggle: { viewModel.togglePlayback() },
+                        isPlaying: viewModel.isPlaying
+                    )
+                    .frame(width: 88, height: 88)
                 }
                 .frame(height: 220)
                 .padding(.bottom, 32)
@@ -106,22 +100,7 @@ struct MinimalMetronomeView: View {
                 Color.black.opacity(0.5).ignoresSafeArea()
             }
         }
-        .onChange(of: isPlaying) { playing in
-            if playing {
-                currentBeat = 0 // Always start from the first beat when playing starts
-                isFirstTick = false
-                startInitialDelay()
-            } else {
-                stopMetronome()
-            }
-        }
-        .onChange(of: accentPattern.count) { _ in
-            // Reset beat if pattern changes
-            currentBeat = 0
-        }
-        .sheet(isPresented: $showingTimeSignaturePicker, onDismiss: {
-            // Do nothing on dismiss; real state remains unchanged
-        }) {
+        .sheet(isPresented: $showingTimeSignaturePicker, onDismiss: {}) {
             VStack(spacing: 16) {
                 TimeSignaturePicker(
                     beatsPerMeasure: $draftBeatsPerMeasure,
@@ -135,18 +114,16 @@ struct MinimalMetronomeView: View {
                     }
                     .buttonStyle(SecondaryDrawerButtonStyle())
                     Button("Apply") {
-                        // Generate new accent pattern, preserving user selections
-                        let oldPattern = accentPattern
+                        let denominator = Int(viewModel.timeSignature.rawValue.split(separator: "/").last ?? "4") ?? 4
+                        let oldPattern = viewModel.accentPattern
                         var newPattern = Array(repeating: AccentLevel.piano, count: draftBeatsPerMeasure)
-                        if !newPattern.isEmpty {
-                            newPattern[0] = .forte
-                        }
+                        if !newPattern.isEmpty { newPattern[0] = .forte }
                         for i in 0..<min(oldPattern.count, draftBeatsPerMeasure) {
                             newPattern[i] = oldPattern[i]
                         }
-                        beatsPerMeasure = draftBeatsPerMeasure
-                        noteValue = draftNoteValue
-                        accentPattern = newPattern
+                        let newTS = TimeSignature(rawValue: "\(draftBeatsPerMeasure)/\(denominator)") ?? .fourFour
+                        viewModel.setTimeSignature(newTS)
+                        viewModel.accentPattern = newPattern
                         showingTimeSignaturePicker = false
                     }
                     .buttonStyle(PrimaryDrawerButtonStyle())
@@ -180,36 +157,6 @@ struct MinimalMetronomeView: View {
         .onAppear { prepareHaptics() }
     }
     
-    private func startInitialDelay() {
-        stopMetronome()
-        initialDelayTimer?.invalidate()
-        initialDelayTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { _ in
-            DispatchQueue.main.async {
-                let accent = accentPattern[currentBeat]
-                soundService.playAccent(accent)
-                startMetronome()
-            }
-        }
-    }
-    
-    private func startMetronome() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
-            DispatchQueue.main.async {
-                currentBeat = (currentBeat + 1) % accentPattern.count
-                let accent = accentPattern[currentBeat]
-                soundService.playAccent(accent)
-            }
-        }
-    }
-    
-    private func stopMetronome() {
-        timer?.invalidate()
-        timer = nil
-        initialDelayTimer?.invalidate()
-        initialDelayTimer = nil
-    }
-    
     private func prepareHaptics() {
         guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         do {
@@ -232,11 +179,12 @@ struct MinimalMetronomeView: View {
 }
 
 struct MinimalPlayPauseButton: View {
-    @Binding var isPlaying: Bool
+    var onToggle: () -> Void
+    var isPlaying: Bool
     var body: some View {
         Button(action: {
             withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
-                isPlaying.toggle()
+                onToggle()
             }
         }) {
             ZStack {
