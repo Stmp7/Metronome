@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import AVFoundation
 
 class NewMetronomeViewModel: ObservableObject {
     // MARK: - Published State
@@ -18,11 +19,18 @@ class NewMetronomeViewModel: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var currentBeat: Int = 0
     @Published var accentPattern: [AccentLevel] = [.forte, .piano, .piano, .piano]
+    @Published var nextBeatTime: AVAudioTime? = nil // For animation
 
     // MARK: - Private State
     private var timer: Timer? = nil
     private let soundService = NewMetronomeSoundService()
     private var cancellables = Set<AnyCancellable>()
+
+    // --- Tap Tempo State ---
+    private var tapTempoTimestamps: [Date] = []
+    private let tapTempoMaxCount = 4
+    private let tapTempoTimeout: TimeInterval = 3.0
+    // -----------------------
 
     // MARK: - Timer Logic
     private func startTimer() {
@@ -116,5 +124,23 @@ class NewMetronomeViewModel: ObservableObject {
             finalPattern[i] = accentPattern[i]
         }
         accentPattern = finalPattern
+    }
+
+    // MARK: - Tap Tempo Logic
+    func handleTapTempo() {
+        let now = Date()
+        if let lastTap = tapTempoTimestamps.last, now.timeIntervalSince(lastTap) > tapTempoTimeout {
+            tapTempoTimestamps.removeAll()
+        }
+        tapTempoTimestamps.append(now)
+        if tapTempoTimestamps.count > tapTempoMaxCount {
+            tapTempoTimestamps.removeFirst()
+        }
+        guard tapTempoTimestamps.count >= 2 else { return }
+        // Calculate intervals between taps
+        let intervals = zip(tapTempoTimestamps.dropFirst(), tapTempoTimestamps).map { $0.timeIntervalSince($1) }
+        let avgInterval = intervals.reduce(0, +) / Double(intervals.count)
+        let newBPM = min(max(60.0 / avgInterval, 40.0), 240.0)
+        setTempo(newBPM)
     }
 } 

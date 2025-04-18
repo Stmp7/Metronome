@@ -7,7 +7,7 @@ struct BeatIndicatorBar: View {
     @Binding var accentLevels: [AccentLevel]
     
     // Fixed height
-    private let blockHeight: CGFloat = 40
+    private let blockHeight: CGFloat = 80
     // Fixed spacing
     private let spacing: CGFloat = 6
     

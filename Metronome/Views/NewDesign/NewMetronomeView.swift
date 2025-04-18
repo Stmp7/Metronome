@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreHaptics
+import AVFoundation
 
 struct MinimalMetronomeView: View {
     @ObservedObject var viewModel: NewMetronomeViewModel
@@ -15,6 +16,8 @@ struct MinimalMetronomeView: View {
     @State private var dialAngle: Double = 0 // in degrees
     @State private var isDragging: Bool = false
     private var interval: Double { 60.0 / viewModel.tempo }
+    @State private var beatProgress: Double = 0.0 // 0...1
+    @State private var displayLink: CADisplayLink? = nil
     
     var body: some View {
         ZStack {
@@ -77,7 +80,8 @@ struct MinimalMetronomeView: View {
                         color: Color(hex: "#200854"),
                         tickColor: Color.white.opacity(0.25),
                         onHaptic: { performHaptic() },
-                        onTick: { /* no-op, sound is handled by ViewModel */ }
+                        onTick: { /* no-op, sound is handled by ViewModel */ },
+                        beatProgress: beatProgress
                     )
                     MinimalPlayPauseButton(
                         onToggle: { viewModel.togglePlayback() },
@@ -85,8 +89,18 @@ struct MinimalMetronomeView: View {
                     )
                     .frame(width: 88, height: 88)
                 }
-                .frame(height: 220)
+                .frame(width: 220, height: 220)
                 .padding(.bottom, 32)
+
+                // Tap Tempo button to the right above Switch button
+                HStack {
+                    Spacer()
+                    TapTempoButton(onTap: { viewModel.handleTapTempo() })
+                        .frame(width: 64, height: 64)
+                        .padding(.trailing, 24)
+                        .padding(.bottom, 8)
+                }
+
                 Button("Switch to Classic Design") {
                     currentDesign = .classic
                 }
@@ -154,7 +168,13 @@ struct MinimalMetronomeView: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(Color(hex: "#330D81"))
         }
-        .onAppear { prepareHaptics() }
+        .onAppear {
+            prepareHaptics()
+            startDisplayLink()
+        }
+        .onDisappear {
+            stopDisplayLink()
+        }
     }
     
     private func prepareHaptics() {
@@ -176,6 +196,43 @@ struct MinimalMetronomeView: View {
             try player.start(atTime: 0)
         } catch {}
     }
+    
+    // --- CADisplayLink logic ---
+    private func startDisplayLink() {
+        stopDisplayLink()
+        let link = CADisplayLink(target: DisplayLinkProxy(target: self), selector: #selector(DisplayLinkProxy.tick))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+    private func stopDisplayLink() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+    private func updateBeatProgress() {
+        guard viewModel.isPlaying, let nextBeatTime = viewModel.nextBeatTime else {
+            beatProgress = 0.0
+            return
+        }
+        let now = AVAudioTime.hostTime(forSeconds: CACurrentMediaTime())
+        let nowTime = AVAudioTime(hostTime: now)
+        if nextBeatTime.isHostTimeValid && nowTime.isHostTimeValid {
+            let nextBeatSeconds = AVAudioTime.seconds(forHostTime: nextBeatTime.hostTime)
+            let nowSeconds = AVAudioTime.seconds(forHostTime: nowTime.hostTime)
+            let secondsUntilNext = nextBeatSeconds - nowSeconds
+            let interval = 60.0 / viewModel.tempo
+            let progress = 1.0 - min(max(secondsUntilNext / interval, 0.0), 1.0)
+            beatProgress = progress
+        } else {
+            beatProgress = 0.0
+        }
+    }
+    // Proxy to allow CADisplayLink to call a SwiftUI view method
+    private class DisplayLinkProxy {
+        private let target: MinimalMetronomeView
+        init(target: MinimalMetronomeView) { self.target = target }
+        @objc func tick() { target.updateBeatProgress() }
+    }
+    // --- End CADisplayLink logic ---
 }
 
 struct MinimalPlayPauseButton: View {
@@ -257,6 +314,7 @@ struct TempoDial: View {
     let tickColor: Color
     let onHaptic: () -> Void
     let onTick: () -> Void
+    let beatProgress: Double
     @State private var lastAngle: CGFloat? = nil
     @State private var lastBPM: Int = 0
     @State private var dialAngle: Double = 0 // in degrees
@@ -393,4 +451,36 @@ struct TempoDial: View {
         }
         .frame(width: diameter, height: diameter)
     }
-} 
+}
+
+// --- Tap Tempo Button View ---
+struct TapTempoButton: View {
+    var onTap: () -> Void
+    @State private var isPressed = false
+    var body: some View {
+        Button(action: {
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.5)) {
+                isPressed = true
+            }
+            onTap()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                withAnimation(.spring(response: 0.18, dampingFraction: 0.5)) {
+                    isPressed = false
+                }
+            }
+        }) {
+            ZStack {
+                Circle()
+                    .fill(isPressed ? Color(hex: "#D1C7F6") : Color(hex: "#F3F0DF"))
+                    .shadow(color: Color.black.opacity(0.18), radius: 4, x: 2, y: 2)
+                Image(systemName: "hand.tap.fill")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(Color(hex: "#8217FF"))
+            }
+        }
+        .scaleEffect(isPressed ? 1.13 : 1.0)
+        .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel("Tap Tempo")
+    }
+}
+// --- End Tap Tempo Button View --- 
