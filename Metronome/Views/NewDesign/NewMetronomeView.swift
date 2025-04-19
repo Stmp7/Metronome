@@ -364,12 +364,21 @@ struct TempoDial: View {
     }
 
     private var indicatorDot: some View {
-        Circle()
-            .fill(Color(hex: "#4314A8"))
-            .frame(width: dotRadius * 2, height: dotRadius * 2)
-            .shadow(color: Color.black.opacity(0.25), radius: 2, x: 2, y: 2)
-            .offset(x: 0, y: -dotOffset)
-            .rotationEffect(indicatorAngle, anchor: .center)
+        Group {
+            if let uiImage = UIImage(named: "Dial_Dot") {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: dotRadius * 2, height: dotRadius * 2)
+            } else {
+                Circle()
+                    .fill(Color(hex: "#9B64FA"))
+                    .frame(width: dotRadius * 2, height: dotRadius * 2)
+            }
+        }
+        .shadow(color: Color.black.opacity(0.25), radius: 2, x: 2, y: 2)
+        .offset(x: 0, y: -dotOffset)
+        .rotationEffect(indicatorAngle, anchor: .center)
     }
 
     var body: some View {
