@@ -108,13 +108,13 @@ struct MinimalMetronomeView: View {
                 .padding(.bottom, 32)
 
                 // Tap Tempo button to the right above Switch button
-                HStack {
-                    Spacer()
-                    TapTempoButton(onTap: { viewModel.handleTapTempo() })
-                        .frame(width: 64, height: 64)
-                        .padding(.trailing, 24)
-                        .padding(.bottom, 8)
-                }
+                // HStack {
+                //     Spacer()
+                //     TapTempoButton(onTap: { viewModel.handleTapTempo() })
+                //         .frame(width: 64, height: 64)
+                //         .padding(.trailing, 24)
+                //         .padding(.bottom, 8)
+                // }
 
                 Button("Switch to Classic Design") {
                     currentDesign = .classic
@@ -128,6 +128,10 @@ struct MinimalMetronomeView: View {
             if showingTimeSignaturePicker {
                 Color.black.opacity(0.5).ignoresSafeArea()
             }
+            // --- Tap Tempo Button: adjust x/y for placement ---
+            TapTempoButton(onTap: { viewModel.handleTapTempo() })
+                .frame(width: 64, height: 64)
+                .position(x: 352, y: 530) // <-- Adjust these values as needed
         }
         .sheet(isPresented: $showingTimeSignaturePicker, onDismiss: {}) {
             VStack(spacing: 16) {
