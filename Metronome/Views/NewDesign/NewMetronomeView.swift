@@ -59,10 +59,25 @@ struct MinimalMetronomeView: View {
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .contentShape(Rectangle())
-                            Text("BPM")
-                                .font(.system(size: 20, weight: .medium))
-                                .foregroundColor(Color.white.opacity(0.75))
-                                .padding(.top, 2)
+                            ZStack {
+                                // BPM label and overlayed arrows
+                                Text("BPM")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundColor(Color.white.opacity(0.75))
+                                    .padding(.top, 2)
+                                GeometryReader { geo in
+                                    // Overlay BPM_Arrows so its top is at the vertical center of the BPM label
+                                    Image("BPM_Arrows")
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 260, height: 260)
+                                        .opacity(0.40)
+                                        .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                                        .offset(y: 38)
+                                        .allowsHitTesting(false)
+                                }
+                                .frame(height: 24) // Match or slightly exceed BPM label height
+                            }
                         }
                     }
                     .buttonStyle(PlainButtonStyle())
