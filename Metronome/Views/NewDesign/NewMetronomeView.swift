@@ -370,6 +370,8 @@ struct TempoDial: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: dotRadius * 2, height: dotRadius * 2)
+                    .rotationEffect(.degrees(dialAngle * -1), anchor: .center)
+                    .rotationEffect(indicatorAngle, anchor: .center)
             } else {
                 Circle()
                     .fill(Color(hex: "#9B64FA"))
